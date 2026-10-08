@@ -9,6 +9,7 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/admin.css">
+  <script src="/photo.js" defer></script>
   <script src="/admin.js" defer></script>
 </head>
 <body>
@@ -49,11 +50,20 @@
         <form id="quick-form" class="quick-grid">
           <input name="full_name" placeholder="Name *" required autocomplete="off">
           <input name="company" placeholder="Company" autocomplete="off">
-          <input name="phone" placeholder="Phone / WhatsApp" type="tel" autocomplete="off">
+          <input name="phone" placeholder="WhatsApp (+ country code)" type="tel" autocomplete="off">
           <input name="email" placeholder="Email" type="email" autocomplete="off">
           <div class="notes-wrap">
             <textarea name="notes" placeholder="What did you talk about? What do they need?"></textarea>
             <button type="button" class="btn mic hidden" id="mic" aria-label="Dictate notes" title="Dictate notes">🎙</button>
+          </div>
+          <div class="quick-photo">
+            <label class="btn" for="quick-photo-input">📸 Photo together</label>
+            <input type="file" id="quick-photo-input" accept="image/*" capture="user" class="visually-hidden">
+            <img id="quick-photo-img" class="hidden" alt="Photo preview">
+            <label class="consent hidden" id="quick-send-row" style="margin:0">
+              <input type="checkbox" id="quick-send" checked> <span>Send it to their WhatsApp</span>
+            </label>
+            <button type="button" class="btn ghost hidden" id="quick-photo-remove">Remove</button>
           </div>
           <div class="quick-foot">
             <select name="timeline" aria-label="Timeline">
@@ -110,6 +120,14 @@
         <span class="badge"></span>
       </div>
       <div class="c-tags chips"></div>
+      <div class="c-photo hidden">
+        <a class="c-photo-link" target="_blank" rel="noopener"><img alt="Photo together" loading="lazy"></a>
+        <div class="c-photo-side">
+          <div class="small c-photo-status"></div>
+          <a class="btn primary c-photo-wa hidden" target="_blank" rel="noopener">Send photo on WhatsApp</a>
+          <button type="button" class="btn c-photo-retry hidden">Retry auto-send</button>
+        </div>
+      </div>
       <p class="c-challenge"></p>
       <div class="c-reach small"></div>
       <details class="c-more">

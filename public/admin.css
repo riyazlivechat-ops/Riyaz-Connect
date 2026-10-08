@@ -69,3 +69,11 @@
 .qr-box img { width: 100%; height: auto; aspect-ratio: 1; display: block; }
 .qr-box .muted { color: #5d6b64; overflow-wrap: anywhere; }
 .qr-box .btn { background: #f0ede4; color: #14211c; border-color: #e2ddd0; }
+
+.quick-photo { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.quick-photo img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; }
+.c-photo { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
+.c-photo img { width: 88px; height: 88px; object-fit: cover; border-radius: 12px; display: block; }
+.c-photo-side { flex: 1; display: grid; gap: 8px; }
+.c-photo-status.ok { color: var(--brand); font-weight: 600; }
+.c-photo-status.bad { color: var(--danger); }

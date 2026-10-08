@@ -1,33 +1,35 @@
 {
-  "name": "Riyaz",
-  "headline": "TODO: your headline from LinkedIn, e.g. 'Customer Experience & Live Chat Consultant'",
-  "bio": "TODO: two sentences from your website about who you help and the result you deliver.",
+  "name": "Mohamed Riyaz",
+  "headline": "Sirah Digital · AI Automation & Digital Solutions",
+  "bio": "I help healthcare clinics, fertility centres, dental practices and growing businesses automate their operations with AI, so their teams spend less time on admin and costs come down.",
   "photo": "",
-  "company": "TODO: your company",
+  "company": "Sirah Digital",
   "location": "TODO: city, country",
   "email": "riyazlivechat@gmail.com",
   "phone": "",
   "whatsapp": "",
-  "website": "",
-  "linkedin": "",
+  "website": "https://sirahdigital.in",
+  "linkedin": "https://www.linkedin.com/in/iammohamedriyaz",
   "bookingUrl": "",
   "services": [
-    "Live chat & customer support",
-    "AI chatbots & automation",
-    "Sales conversion on website",
-    "Team training",
+    "AI automation",
+    "Clinic & healthcare automation",
+    "WhatsApp & website chatbots",
+    "CRM automation",
+    "Business process automation",
     "Something else"
   ],
   "proof": [
-    "TODO: a short result, e.g. '40% faster response times for a retail client'",
+    "TODO: a short result, e.g. 'Cut appointment no-shows by 30% for a dental clinic'",
     "TODO: a second proof point"
   ],
   "gift": {
-    "title": "TODO: a free resource, e.g. '10-point Live Chat Health Check'",
+    "title": "TODO: a free resource, e.g. 'Free 15-minute AI automation audit for your clinic'",
     "url": ""
   },
   "event": {
     "name": "Amanah Chambers Connect",
-    "greeting": "Great to meet you at Amanah Chambers Connect"
+    "greeting": "Great to meet you at Amanah Chambers Connect",
+    "photoCaption": "Amanah Chambers Connect"
   }
 }

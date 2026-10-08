@@ -4,7 +4,7 @@
   const CHANNEL_TEXT = {
     whatsapp: 'on WhatsApp', email: 'by email', linkedin: 'on LinkedIn', call: 'with a quick call',
   };
-  const state = { interests: new Set(), timeline: null, preferred_channel: null };
+  const state = { interests: new Set(), timeline: null, preferred_channel: null, photo: null };
   let profile = null;
 
   const isTodo = (v) => !v || /^TODO/i.test(v);
@@ -90,6 +90,46 @@
     });
   });
 
+  // ---------- photo together ----------
+
+  function setPhoto(dataUrl) {
+    state.photo = dataUrl;
+    $('#photo-img').src = dataUrl || '';
+    $('#photo-preview').classList.toggle('hidden', !dataUrl);
+    $('#photo-empty').classList.toggle('hidden', Boolean(dataUrl));
+    $('#send-photo-row').classList.toggle('hidden', !dataUrl);
+    $('#photo-lead').textContent = dataUrl
+      ? 'Lovely! Now leave your details below and I\'ll send it to your WhatsApp.'
+      : 'A little keepsake from today. I\'ll send it to your WhatsApp.';
+  }
+
+  $('#photo-input').addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    $('#photo-working').classList.remove('hidden');
+    try {
+      const event = profile?.event?.photoCaption || profile?.event?.name || '';
+      const date = new Date().toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' });
+      setPhoto(await window.RCPhoto.compose(file, {
+        title: event,
+        subtitle: [profile?.name, profile?.company, date].filter((x) => x && !isTodo(x)).join(' · '),
+      }));
+      $('#form-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setTimeout(() => $('#full_name').focus({ preventScroll: true }), 400);
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      $('#photo-working').classList.add('hidden');
+    }
+  });
+  $('#photo-remove').addEventListener('click', () => setPhoto(null));
+  $('#photo-skip').addEventListener('click', () => {
+    $('#photo-card').classList.add('hidden');
+    $('#form-step').textContent = '20 seconds';
+    $('#form-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
   function collect() {
     const f = $('#connect-form');
     const v = (name) => f.elements[name].value.trim();
@@ -107,6 +147,8 @@
       timeline: state.timeline,
       preferred_channel: state.preferred_channel,
       consent: f.elements.consent.checked,
+      photo: state.photo,
+      send_photo: Boolean(state.photo) && f.elements.send_photo.checked,
     };
   }
 
@@ -115,6 +157,7 @@
     if (!d.full_name) errs.push('Please add your name.');
     if (!d.email && !d.phone && !d.linkedin) errs.push('Please share at least one way to reach you: email, phone or LinkedIn.');
     if (d.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) errs.push('That email address does not look right.');
+    if (d.send_photo && !d.phone) errs.push('Please add your WhatsApp number so I can send you our photo.');
     if (!d.consent) errs.push('Please tick the box so I can follow up with you.');
     return errs;
   }
@@ -143,7 +186,13 @@
 
   // Event Wi-Fi is often poor: keep failed submissions on the device and retry later.
   const readQueue = () => storage((s) => JSON.parse(s.getItem(QUEUE_KEY) || '[]'), []);
-  const writeQueue = (q) => storage((s) => s.setItem(QUEUE_KEY, JSON.stringify(q)));
+  const writeQueue = (q) => storage((s) => { s.setItem(QUEUE_KEY, JSON.stringify(q)); return true; }, false);
+
+  // Photos are large: if the phone's storage is full, keep the details and drop the photo.
+  function enqueue(data) {
+    if (writeQueue([...readQueue(), data])) return true;
+    return writeQueue([...readQueue(), { ...data, photo: null, send_photo: false }]);
+  }
 
   async function flushQueue() {
     const queue = readQueue();
@@ -155,7 +204,34 @@
     writeQueue(remaining);
   }
 
-  function showSuccess(data, offline) {
+  function showPhotoResult(data, result) {
+    if (!data.photo) return;
+    $('#success-photo-img').src = data.photo;
+    const save = $('#success-photo-save');
+    save.href = data.photo;
+    save.download = `${(profile?.event?.name || 'photo').replace(/[^a-z0-9]+/gi, '-')}.jpg`;
+    $('#success-photo').classList.remove('hidden');
+
+    // Native share sheet lets them post it straight to WhatsApp or save it to Photos.
+    const share = $('#success-photo-share');
+    if (navigator.canShare) {
+      const bytes = Uint8Array.from(atob(data.photo.split(',')[1]), (ch) => ch.charCodeAt(0));
+      const file = new File([bytes], save.download, { type: 'image/jpeg' });
+      if (navigator.canShare({ files: [file] })) {
+        share.classList.remove('hidden');
+        share.onclick = () => navigator.share({ files: [file] }).catch(() => {});
+      }
+    }
+
+    const note = document.createElement('p');
+    note.className = 'muted small';
+    if (data.send_photo && result?.photoDelivery === 'auto') note.textContent = 'Our photo is on its way to your WhatsApp.';
+    else if (data.send_photo) note.textContent = `${profile?.name || 'I'} will send our photo to your WhatsApp shortly.`;
+    else note.textContent = 'Save it now so you have it.';
+    $('#success-photo').appendChild(note);
+  }
+
+  function showSuccess(data, offline, result) {
     const first = data.full_name.split(/\s+/)[0];
     $('#form-card').classList.add('hidden');
     $('#about').classList.add('hidden');
@@ -171,6 +247,8 @@
       $('#gift').classList.remove('hidden');
     }
     showLink('#booking-link', profile?.bookingUrl);
+    $('#photo-card').classList.add('hidden');
+    showPhotoResult(data, result);
     $('#success').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
@@ -185,13 +263,12 @@
     btn.disabled = true;
     btn.textContent = 'Connecting…';
     try {
-      await send(data);
-      showSuccess(data, false);
+      showSuccess(data, false, await send(data));
     } catch (err) {
       if (err.errors) {
         showErrors(err.errors);
       } else {
-        writeQueue([...readQueue(), data]);
+        enqueue(data);
         showSuccess(data, true);
       }
     } finally {

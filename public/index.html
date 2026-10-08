@@ -7,6 +7,7 @@
   <title>Let's Connect</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
+  <script src="/photo.js" defer></script>
   <script src="/connect.js" defer></script>
 </head>
 <body>
@@ -28,13 +29,32 @@
       </div>
     </section>
 
+    <section class="card photo-card" id="photo-card" aria-labelledby="photo-title">
+      <div class="step-label">Step 1 · Optional</div>
+      <h2 id="photo-title" style="margin-top:4px">Let's take a photo together 📸</h2>
+      <p class="muted small" style="margin:6px 0 0" id="photo-lead">A little keepsake from today. I'll send it to your WhatsApp.</p>
+      <div id="photo-empty" class="stack">
+        <label class="btn primary block" for="photo-input">Open camera</label>
+        <button type="button" class="btn ghost block" id="photo-skip">Skip</button>
+      </div>
+      <input type="file" id="photo-input" accept="image/*" capture="user" class="visually-hidden">
+      <figure class="photo-preview hidden" id="photo-preview">
+        <img id="photo-img" alt="Your photo together">
+        <div class="photo-tools">
+          <label class="btn" for="photo-input">Retake</label>
+          <button type="button" class="btn ghost" id="photo-remove">Remove</button>
+        </div>
+      </figure>
+      <p class="muted small hidden" id="photo-working" aria-live="polite">Preparing your photo…</p>
+    </section>
+
     <section class="card" id="about" aria-label="About">
       <p class="bio" id="bio"></p>
       <ul class="proof" id="proof"></ul>
     </section>
 
     <section class="card" id="form-card" aria-labelledby="form-title">
-      <div class="step-label">20 seconds</div>
+      <div class="step-label" id="form-step">Step 2 · 20 seconds</div>
       <h2 id="form-title" style="margin-top:4px">Let's stay in touch</h2>
       <p class="muted small" style="margin:6px 0 0">Leave your details and I'll send you a personal follow-up, not a newsletter.</p>
 
@@ -59,8 +79,8 @@
         </div>
         <div class="row">
           <div class="field">
-            <label for="phone">Phone / WhatsApp</label>
-            <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel">
+            <label for="phone">WhatsApp number</label>
+            <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+ country code">
           </div>
           <div class="field">
             <label for="linkedin">LinkedIn</label>
@@ -107,6 +127,11 @@
           <input id="website_url" name="website_url" tabindex="-1" autocomplete="off">
         </div>
 
+        <label class="consent hidden" id="send-photo-row">
+          <input type="checkbox" id="send_photo" name="send_photo" checked>
+          <span>Send our photo to my WhatsApp</span>
+        </label>
+
         <label class="consent">
           <input type="checkbox" id="consent" name="consent">
           <span id="consent-text">I'm happy for Riyaz to keep these details and follow up with me personally. You can ask to be removed at any time.</span>
@@ -121,6 +146,13 @@
       <div class="tick" aria-hidden="true">✓</div>
       <h2 id="success-title">Thank you!</h2>
       <p class="muted" id="success-text"></p>
+      <figure class="photo-preview hidden" id="success-photo">
+        <img id="success-photo-img" alt="Your photo together">
+        <div class="photo-tools">
+          <a class="btn primary" id="success-photo-save" download>Save photo</a>
+          <button type="button" class="btn hidden" id="success-photo-share">Share</button>
+        </div>
+      </figure>
       <div class="gift hidden" id="gift">
         <strong>A small thank-you</strong>
         <p style="margin:6px 0 12px" id="gift-title"></p>

@@ -136,6 +136,17 @@ details.more { margin-top: 16px; border-top: 1px dashed var(--line); padding-top
 details.more summary { cursor: pointer; font-weight: 600; color: var(--brand); list-style: none; }
 details.more summary::-webkit-details-marker { display: none; }
 
+/* Photo */
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.stack { display: grid; gap: 10px; margin-top: 14px; }
+.photo-card { border-color: color-mix(in srgb, var(--gold) 45%, var(--line)); }
+.photo-preview { margin: 14px 0 0; }
+.photo-preview img, .keepsake img { width: 100%; height: auto; display: block; border-radius: 14px; background: var(--surface-2); }
+.photo-tools { display: flex; gap: 10px; margin-top: 10px; }
+.photo-tools > .btn { flex: 1; }
+.keepsake { text-align: center; }
+.keepsake h1 { font-size: 24px; margin-top: 16px; }
+
 /* Success */
 .success { text-align: center; }
 .tick {

@@ -111,6 +111,14 @@
     return `Hi ${firstName(c)}, it was great meeting you at ${c.event}${at}. ${topic}\n\n${ask}\n\nBest,\n${profile.name}`;
   }
 
+  function photoMessage(c) {
+    return `Hi ${firstName(c)}, lovely meeting you at ${c.event}! Here's our photo together 📸\n${profileUrl()}/p/${c.photo_token}\n\n${profile.name}`;
+  }
+
+  function profileUrl() {
+    return (profile.connectUrl || location.origin).replace(/\/+$/, '');
+  }
+
   function renderList(contacts) {
     const list = $('#list');
     if (!contacts.length) {
@@ -157,6 +165,8 @@
     const reach = [c.email, c.phone, c.referral && `Suggested intro: ${c.referral}`].filter(Boolean);
     $('.c-reach', node).textContent = reach.join(' · ');
 
+    if (c.photo_token) renderPhoto(node, c);
+
     const notes = $('.c-notes', node);
     notes.value = c.notes || '';
     notes.addEventListener('change', () => save(c, { notes: notes.value }));
@@ -180,7 +190,7 @@
     const li = $('.c-li', node);
     const syncLinks = () => {
       const text = encodeURIComponent(msg.value);
-      if (c.phone) { wa.href = `https://wa.me/${c.phone.replace(/\D/g, '')}?text=${text}`; wa.classList.remove('hidden'); }
+      if (c.wa_number) { wa.href = `https://wa.me/${c.wa_number}?text=${text}`; wa.classList.remove('hidden'); }
       if (c.email) {
         mail.href = `mailto:${c.email}?subject=${encodeURIComponent(`Great meeting you at ${c.event}`)}&body=${text}`;
         mail.classList.remove('hidden');
@@ -211,6 +221,41 @@
     return node;
   }
 
+  function renderPhoto(node, c) {
+    const box = $('.c-photo', node);
+    box.classList.remove('hidden');
+    $('.c-photo-link', node).href = `/p/${c.photo_token}`;
+    $('img', box).src = `/p/${c.photo_token}.jpg`;
+
+    const status = $('.c-photo-status', node);
+    const waBtn = $('.c-photo-wa', node);
+    const retry = $('.c-photo-retry', node);
+    const paint = () => {
+      const st = c.photo_whatsapp_status;
+      status.className = `small c-photo-status${st === 'sent' ? ' ok' : st === 'failed' ? ' bad' : ''}`;
+      status.textContent = {
+        sent: '✓ Photo sent on WhatsApp',
+        pending: 'Sending photo…',
+        failed: `Auto-send failed${c.photo_whatsapp_error ? `: ${c.photo_whatsapp_error}` : ''}`,
+        manual: c.wa_number ? 'Photo ready to send' : 'No valid WhatsApp number (needs country code)',
+      }[st] || 'Photo not sent (they chose not to receive it)';
+      waBtn.classList.toggle('hidden', !c.wa_number || st === 'sent');
+      retry.classList.toggle('hidden', !(profile.whatsappAuto && c.wa_number && st === 'failed'));
+    };
+    if (c.wa_number) waBtn.href = `https://wa.me/${c.wa_number}?text=${encodeURIComponent(photoMessage(c))}`;
+    // Sending from your own WhatsApp opens the chat with the message ready; you just tap send.
+    waBtn.addEventListener('click', () => {
+      setTimeout(() => save(c, { photo_whatsapp_status: 'sent' }).then(paint), 800);
+    });
+    retry.addEventListener('click', async () => {
+      retry.disabled = true;
+      try { Object.assign(c, await api(`/api/contacts/${c.id}/send-photo`, { method: 'POST' })); } catch { /* shown below */ }
+      retry.disabled = false;
+      paint();
+    });
+    paint();
+  }
+
   async function save(c, patch) {
     try {
       Object.assign(c, await api(`/api/contacts/${c.id}`, { method: 'PATCH', body: patch }));
@@ -222,13 +267,35 @@
 
   // ---------- quick capture ----------
 
+  let quickPhoto = null;
+  function setQuickPhoto(dataUrl) {
+    quickPhoto = dataUrl;
+    $('#quick-photo-img').src = dataUrl || '';
+    ['#quick-photo-img', '#quick-send-row', '#quick-photo-remove'].forEach((id) => $(id).classList.toggle('hidden', !dataUrl));
+  }
+  $('#quick-photo-input').addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const date = new Date().toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' });
+      setQuickPhoto(await window.RCPhoto.compose(file, {
+        title: profile.event.photoCaption || profile.event.name,
+        subtitle: [profile.name, profile.company, date].filter((x) => x && !/^TODO/i.test(x)).join(' · '),
+      }));
+    } catch (err) { toast(err.message); }
+  });
+  $('#quick-photo-remove').addEventListener('click', () => setQuickPhoto(null));
+
   $('#quick-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.target;
     const body = Object.fromEntries(new FormData(f));
+    if (quickPhoto) { body.photo = quickPhoto; body.send_photo = $('#quick-send').checked; }
     try {
       await api('/api/contacts', { method: 'POST', body });
       f.reset();
+      setQuickPhoto(null);
       toast(`${body.full_name} saved`);
       refresh();
     } catch (ex) {

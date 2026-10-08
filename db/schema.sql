@@ -33,3 +33,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS contacts_event_email_uniq
   ON contacts (event, lower(email)) WHERE email IS NOT NULL;
 CREATE INDEX IF NOT EXISTS contacts_created_idx   ON contacts (created_at DESC);
 CREATE INDEX IF NOT EXISTS contacts_follow_up_idx ON contacts (follow_up_on) WHERE status <> 'archived';
+
+-- Photo taken together at the event, and delivery of it to the contact's WhatsApp.
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS photo                 BYTEA;
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS photo_mime            TEXT;
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS photo_token           TEXT UNIQUE;
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS photo_whatsapp_status TEXT
+  CHECK (photo_whatsapp_status IN ('pending', 'sent', 'failed', 'manual'));
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS photo_whatsapp_error  TEXT;
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS photo_sent_at         TIMESTAMPTZ;

@@ -6,6 +6,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const QRCode = require('qrcode');
 const { pool, migrate } = require('./db');
+const whatsapp = require('./whatsapp');
 
 const PORT = Number(process.env.PORT) || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
@@ -26,14 +27,18 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      imgSrc: ["'self'", 'data:', 'https:'],
+      imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
       styleSrc: ["'self'", "'unsafe-inline'"],
       scriptSrc: ["'self'"],
       connectSrc: ["'self'"],
     },
   },
 }));
-app.use(express.json({ limit: '32kb' }));
+// Routes that accept a photo get a bigger body limit; everything else stays small.
+const PHOTO_ROUTES = new Set(['/api/connect', '/api/contacts']);
+const jsonSmall = express.json({ limit: '32kb' });
+const jsonPhoto = express.json({ limit: '8mb' });
+app.use((req, res, next) => (PHOTO_ROUTES.has(req.path) ? jsonPhoto : jsonSmall)(req, res, next));
 
 // ---------- helpers ----------
 
@@ -99,6 +104,67 @@ function parseContact(body, profile) {
   return { contact, errors };
 }
 
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+
+// Accepts a data: URL from the browser and returns the image bytes, checking they really are a JPEG/PNG/WebP.
+function parsePhoto(dataUrl) {
+  if (!dataUrl) return { photo: null };
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl));
+  if (!m) return { error: 'That photo format is not supported.' };
+  const buf = Buffer.from(m[2], 'base64');
+  if (buf.length > MAX_PHOTO_BYTES) return { error: 'That photo is too large.' };
+  const isJpeg = buf[0] === 0xff && buf[1] === 0xd8;
+  const isPng = buf.subarray(0, 4).toString('hex') === '89504e47';
+  const isWebp = buf.subarray(0, 4).toString() === 'RIFF' && buf.subarray(8, 12).toString() === 'WEBP';
+  if (!isJpeg && !isPng && !isWebp) return { error: 'That file is not an image.' };
+  return { photo: { buf, mime: isJpeg ? 'image/jpeg' : isPng ? 'image/png' : 'image/webp' } };
+}
+
+// Everything except the photo bytes, which are only ever served from /p/:token.
+const CONTACT_COLUMNS = `id, event, source, full_name, company, role, email, phone, linkedin, interests, challenge,
+  timeline, preferred_channel, referral, consent, score, warmth, status, notes, follow_up_on, created_at, updated_at,
+  photo_token, photo_whatsapp_status, photo_whatsapp_error, photo_sent_at`;
+
+function present(row) {
+  return { ...row, wa_number: whatsapp.toWhatsAppNumber(row.phone) };
+}
+
+// Delivers the photo in the background. Without WhatsApp API settings it is left for a one-tap manual send.
+async function deliverPhoto(id) {
+  const { rows } = await pool.query(
+    'SELECT full_name, phone, event, photo, photo_mime FROM contacts WHERE id = $1 AND photo IS NOT NULL', [id],
+  );
+  if (!rows.length) return;
+  const c = rows[0];
+  const to = whatsapp.toWhatsAppNumber(c.phone);
+  if (!whatsapp.isConfigured() || !to) {
+    await pool.query(`UPDATE contacts SET photo_whatsapp_status = 'manual', photo_whatsapp_error = $2 WHERE id = $1`,
+      [id, to ? null : 'No WhatsApp number']);
+    return;
+  }
+  await pool.query(`UPDATE contacts SET photo_whatsapp_status = 'pending', photo_whatsapp_error = NULL WHERE id = $1`, [id]);
+  try {
+    await whatsapp.sendPhoto({
+      to, firstName: c.full_name.split(/\s+/)[0], eventName: c.event, photo: c.photo, mime: c.photo_mime,
+    });
+    await pool.query(`UPDATE contacts SET photo_whatsapp_status = 'sent', photo_sent_at = now() WHERE id = $1`, [id]);
+  } catch (err) {
+    console.error(`WhatsApp photo to contact ${id} failed:`, err.message);
+    await pool.query(`UPDATE contacts SET photo_whatsapp_status = 'failed', photo_whatsapp_error = $2 WHERE id = $1`,
+      [id, err.message.slice(0, 500)]);
+  }
+}
+
+async function savePhoto(id, photo) {
+  const token = crypto.randomBytes(18).toString('base64url');
+  await pool.query(
+    `UPDATE contacts SET photo = $2, photo_mime = $3, photo_token = $4,
+       photo_whatsapp_status = NULL, photo_whatsapp_error = NULL, photo_sent_at = NULL WHERE id = $1`,
+    [id, photo.buf, photo.mime, token],
+  );
+  return token;
+}
+
 function sign(value) {
   return crypto.createHmac('sha256', SESSION_SECRET).update(value).digest('base64url');
 }
@@ -141,8 +207,53 @@ const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next
 
 app.get('/api/profile', (req, res) => {
   const p = loadProfile();
-  res.json({ ...p, connectUrl: publicUrl(req) });
+  res.json({ ...p, connectUrl: publicUrl(req), whatsappAuto: whatsapp.isConfigured() });
 });
+
+// Keepsake page for the photo. Shared as a link on WhatsApp, which shows the photo as a preview.
+const escapeHtml = (s) => String(s || '').replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+
+app.get('/p/:token.jpg', asyncRoute(async (req, res) => {
+  const { rows } = await pool.query('SELECT photo, photo_mime FROM contacts WHERE photo_token = $1', [req.params.token]);
+  if (!rows.length || !rows[0].photo) return res.status(404).end();
+  res.set('Content-Type', rows[0].photo_mime).set('Cache-Control', 'private, max-age=86400')
+    .set('X-Robots-Tag', 'noindex').send(rows[0].photo);
+}));
+
+app.get('/p/:token', asyncRoute(async (req, res) => {
+  const { rows } = await pool.query(
+    'SELECT full_name, event FROM contacts WHERE photo_token = $1 AND photo IS NOT NULL', [req.params.token],
+  );
+  if (!rows.length) return res.status(404).send('This photo is no longer available.');
+  const p = loadProfile();
+  const first = rows[0].full_name.split(/\s+/)[0];
+  const img = `${publicUrl(req)}/p/${req.params.token}.jpg`;
+  const title = `${first} & ${p.name} at ${rows[0].event}`;
+  const links = [
+    real(p.linkedin) && `<a class="btn primary block" href="${escapeHtml(p.linkedin)}" target="_blank" rel="noopener">Connect on LinkedIn</a>`,
+    real(p.website) && `<a class="btn block" href="${escapeHtml(p.website)}" target="_blank" rel="noopener">${escapeHtml(p.company || 'Website')}</a>`,
+  ].filter(Boolean).join('');
+  res.set('X-Robots-Tag', 'noindex').type('html').send(`<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex"><meta name="theme-color" content="#0b5d45">
+<title>${escapeHtml(title)}</title>
+<meta property="og:title" content="${escapeHtml(title)}">
+<meta property="og:description" content="Great to meet you, ${escapeHtml(first)}!">
+<meta property="og:image" content="${escapeHtml(img)}"><meta property="og:type" content="website">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/styles.css">
+</head><body><main class="wrap">
+<section class="card keepsake">
+  <img src="/p/${escapeHtml(req.params.token)}.jpg" alt="${escapeHtml(title)}">
+  <h1>Great to meet you, ${escapeHtml(first)}!</h1>
+  <p class="muted">${escapeHtml(rows[0].event)} · ${escapeHtml(p.name)}</p>
+  <div class="stack">
+    <a class="btn block" href="/p/${escapeHtml(req.params.token)}.jpg" download="${escapeHtml(rows[0].event)}.jpg">Save photo</a>
+    ${links}
+    <a class="btn ghost block" href="/vcard">Save ${escapeHtml(p.name)}'s contact</a>
+  </div>
+</section></main></body></html>`);
+}));
 
 // Placeholder values in config/profile.json start with "TODO" and are never shown to visitors.
 const real = (v) => (v && !/^TODO/i.test(v) ? v : '');
@@ -189,6 +300,11 @@ app.post('/api/connect', connectLimiter, asyncRoute(async (req, res) => {
     errors.push('Please share at least one way to reach you: email, phone or LinkedIn.');
   }
   if (!contact.consent) errors.push('Please tick the box so I can follow up with you.');
+  const { photo, error: photoError } = parsePhoto(req.body.photo);
+  if (photoError) errors.push(photoError);
+  if (photo && req.body.send_photo === true && !whatsapp.toWhatsAppNumber(contact.phone)) {
+    errors.push('Please add your WhatsApp number with the country code (e.g. +91…) so I can send you our photo.');
+  }
   if (errors.length) return res.status(400).json({ errors });
 
   const { score, warmth } = scoreLead(contact);
@@ -223,7 +339,18 @@ app.post('/api/connect', connectLimiter, asyncRoute(async (req, res) => {
     : `INSERT INTO contacts (${columns}) VALUES (${placeholders}) RETURNING id`;
 
   const { rows } = await pool.query(sql, values);
-  res.status(201).json({ ok: true, id: rows[0].id, firstName: contact.full_name.split(/\s+/)[0] });
+  const id = rows[0].id;
+  let photoUrl = null;
+  let photoDelivery = null;
+  if (photo) {
+    const token = await savePhoto(id, photo);
+    photoUrl = `/p/${token}`;
+    if (req.body.send_photo === true) {
+      photoDelivery = whatsapp.isConfigured() ? 'auto' : 'manual';
+      deliverPhoto(id).catch((err) => console.error('Photo delivery failed:', err.message));
+    }
+  }
+  res.status(201).json({ ok: true, id, firstName: contact.full_name.split(/\s+/)[0], photoUrl, photoDelivery });
 }));
 
 // ---------- admin auth ----------
@@ -269,11 +396,11 @@ app.get('/api/contacts', requireAdmin, asyncRoute(async (req, res) => {
   if (req.query.due === '1') where.push(`follow_up_on <= CURRENT_DATE AND status IN ('new', 'contacted', 'meeting')`);
 
   const { rows } = await pool.query(
-    `SELECT * FROM contacts ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+    `SELECT ${CONTACT_COLUMNS} FROM contacts ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
      ORDER BY CASE warmth WHEN 'hot' THEN 0 WHEN 'warm' THEN 1 ELSE 2 END, created_at DESC LIMIT 500`,
     params,
   );
-  res.json(rows);
+  res.json(rows.map(present));
 }));
 
 app.get('/api/stats', requireAdmin, asyncRoute(async (req, res) => {
@@ -291,6 +418,8 @@ app.get('/api/stats', requireAdmin, asyncRoute(async (req, res) => {
 app.post('/api/contacts', requireAdmin, asyncRoute(async (req, res) => {
   const profile = loadProfile();
   const { contact, errors } = parseContact(req.body, profile);
+  const { photo, error: photoError } = parsePhoto(req.body.photo);
+  if (photoError) errors.push(photoError);
   if (errors.length) return res.status(400).json({ errors });
   const { score, warmth } = scoreLead(contact);
   const notes = clean(req.body.notes, 4000);
@@ -300,12 +429,18 @@ app.post('/api/contacts', requireAdmin, asyncRoute(async (req, res) => {
      VALUES ($1,'manual',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16, CURRENT_DATE + 1)
      ON CONFLICT (event, lower(email)) WHERE email IS NOT NULL
        DO UPDATE SET notes = concat_ws(E'\\n', contacts.notes, EXCLUDED.notes), updated_at = now()
-     RETURNING *`,
+     RETURNING id`,
     [contact.event, contact.full_name, contact.company, contact.role, contact.email, contact.phone, contact.linkedin,
       contact.interests, contact.challenge, contact.timeline, contact.preferred_channel, contact.referral,
       contact.consent, score, warmth, notes],
   );
-  res.status(201).json(rows[0]);
+  const { id } = rows[0];
+  if (photo) {
+    await savePhoto(id, photo);
+    if (req.body.send_photo === true) await deliverPhoto(id);
+  }
+  const saved = await pool.query(`SELECT ${CONTACT_COLUMNS} FROM contacts WHERE id = $1`, [id]);
+  res.status(201).json(present(saved.rows[0]));
 }));
 
 app.patch('/api/contacts/:id', requireAdmin, asyncRoute(async (req, res) => {
@@ -328,14 +463,26 @@ app.patch('/api/contacts/:id', requireAdmin, asyncRoute(async (req, res) => {
     if (d !== null && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return res.status(400).json({ error: 'Bad date.' });
     add('follow_up_on', d);
   }
+  if (req.body.photo_whatsapp_status === 'sent') {
+    sets.push(`photo_whatsapp_status = 'sent'`, 'photo_sent_at = now()', 'photo_whatsapp_error = NULL');
+  }
   if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
   params.push(req.params.id);
   const { rows } = await pool.query(
-    `UPDATE contacts SET ${sets.join(', ')}, updated_at = now() WHERE id = $${params.length} RETURNING *`,
+    `UPDATE contacts SET ${sets.join(', ')}, updated_at = now() WHERE id = $${params.length} RETURNING ${CONTACT_COLUMNS}`,
     params,
   );
   if (!rows.length) return res.status(404).json({ error: 'Not found.' });
-  res.json(rows[0]);
+  res.json(present(rows[0]));
+}));
+
+// Retry sending the photo automatically (needs WhatsApp API settings).
+app.post('/api/contacts/:id/send-photo', requireAdmin, asyncRoute(async (req, res) => {
+  if (!whatsapp.isConfigured()) return res.status(400).json({ error: 'WhatsApp sending is not set up yet.' });
+  await deliverPhoto(req.params.id);
+  const { rows } = await pool.query(`SELECT ${CONTACT_COLUMNS} FROM contacts WHERE id = $1`, [req.params.id]);
+  if (!rows.length) return res.status(404).json({ error: 'Not found.' });
+  res.json(present(rows[0]));
 }));
 
 app.delete('/api/contacts/:id', requireAdmin, asyncRoute(async (req, res) => {
