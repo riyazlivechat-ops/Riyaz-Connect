@@ -1,0 +1,23 @@
+{
+  "name": "riyaz-connect",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Event networking companion: a QR-first connect page for people you meet, and a private follow-up dashboard backed by Postgres.",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "migrate": "node db/migrate.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.22.3",
+    "express-rate-limit": "^8.7.1",
+    "helmet": "^8.3.0",
+    "pg": "^8.23.1",
+    "qrcode": "^1.5.4"
+  }
+}

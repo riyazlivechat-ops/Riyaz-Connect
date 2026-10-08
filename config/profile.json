@@ -1,0 +1,33 @@
+{
+  "name": "Riyaz",
+  "headline": "TODO: your headline from LinkedIn, e.g. 'Customer Experience & Live Chat Consultant'",
+  "bio": "TODO: two sentences from your website about who you help and the result you deliver.",
+  "photo": "",
+  "company": "TODO: your company",
+  "location": "TODO: city, country",
+  "email": "riyazlivechat@gmail.com",
+  "phone": "",
+  "whatsapp": "",
+  "website": "",
+  "linkedin": "",
+  "bookingUrl": "",
+  "services": [
+    "Live chat & customer support",
+    "AI chatbots & automation",
+    "Sales conversion on website",
+    "Team training",
+    "Something else"
+  ],
+  "proof": [
+    "TODO: a short result, e.g. '40% faster response times for a retail client'",
+    "TODO: a second proof point"
+  ],
+  "gift": {
+    "title": "TODO: a free resource, e.g. '10-point Live Chat Health Check'",
+    "url": ""
+  },
+  "event": {
+    "name": "Amanah Chambers Connect",
+    "greeting": "Great to meet you at Amanah Chambers Connect"
+  }
+}

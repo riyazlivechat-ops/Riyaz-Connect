@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b5d45">
+  <meta name="robots" content="noindex">
+  <title>Connect Dashboard</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/admin.css">
+  <script src="/admin.js" defer></script>
+</head>
+<body>
+  <!-- Sign in -->
+  <main class="wrap hidden" id="login-view">
+    <section class="card" style="margin-top:15vh">
+      <h1 style="font-size:24px">Dashboard</h1>
+      <p class="muted small">Only you can see this.</p>
+      <form id="login-form">
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" type="password" autocomplete="current-password" required>
+        </div>
+        <ul class="errors hidden" id="login-error" role="alert"></ul>
+        <button class="btn primary block" style="margin-top:14px">Sign in</button>
+      </form>
+    </section>
+  </main>
+
+  <!-- Dashboard -->
+  <div class="hidden" id="app-view">
+    <header class="topbar">
+      <div>
+        <div class="step-label" id="event-name">Event</div>
+        <h1>Your connections</h1>
+      </div>
+      <button class="btn primary" id="show-qr">Show QR</button>
+    </header>
+
+    <main class="wrap wide">
+      <section class="stats" id="stats" aria-label="Summary"></section>
+
+      <section class="card" aria-labelledby="quick-title">
+        <div class="quick-head">
+          <h2 id="quick-title" style="font-size:18px">Quick capture</h2>
+          <span class="muted small">They don't want to scan? Add them in 10 seconds.</span>
+        </div>
+        <form id="quick-form" class="quick-grid">
+          <input name="full_name" placeholder="Name *" required autocomplete="off">
+          <input name="company" placeholder="Company" autocomplete="off">
+          <input name="phone" placeholder="Phone / WhatsApp" type="tel" autocomplete="off">
+          <input name="email" placeholder="Email" type="email" autocomplete="off">
+          <div class="notes-wrap">
+            <textarea name="notes" placeholder="What did you talk about? What do they need?"></textarea>
+            <button type="button" class="btn mic hidden" id="mic" aria-label="Dictate notes" title="Dictate notes">🎙</button>
+          </div>
+          <div class="quick-foot">
+            <select name="timeline" aria-label="Timeline">
+              <option value="">Timeline?</option>
+              <option value="now">Needs help now</option>
+              <option value="quarter">Next 3 months</option>
+              <option value="exploring">Exploring</option>
+            </select>
+            <button class="btn primary">Save</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="toolbar" aria-label="Filters">
+        <input type="search" id="search" placeholder="Search names, companies, notes…">
+        <div class="chips" id="filters">
+          <button class="chip" data-filter="all" aria-pressed="true">All</button>
+          <button class="chip" data-filter="hot" aria-pressed="false">🔥 Hot</button>
+          <button class="chip" data-filter="due" aria-pressed="false">Follow up today</button>
+          <button class="chip" data-filter="client" aria-pressed="false">Clients</button>
+          <button class="chip" data-filter="archived" aria-pressed="false">Archived</button>
+        </div>
+      </section>
+
+      <section id="list" aria-live="polite"></section>
+
+      <footer class="admin-foot">
+        <a class="btn" href="/api/contacts.csv">Export CSV</a>
+        <a class="btn" href="/" target="_blank">Preview connect page</a>
+        <button class="btn ghost" id="logout">Sign out</button>
+      </footer>
+    </main>
+  </div>
+
+  <!-- Full-screen QR for people to scan from your phone -->
+  <div class="qr-overlay hidden" id="qr-overlay" role="dialog" aria-modal="true" aria-label="Scan to connect">
+    <div class="qr-box">
+      <p class="step-label" id="qr-event"></p>
+      <h2 id="qr-title">Scan to connect</h2>
+      <img src="/qr.svg" alt="QR code for the connect page" id="qr-img">
+      <p class="muted small" id="qr-url"></p>
+      <button class="btn block" id="close-qr">Done</button>
+    </div>
+  </div>
+
+  <template id="contact-tpl">
+    <article class="contact card">
+      <div class="contact-head">
+        <div class="initials"></div>
+        <div class="who">
+          <h3 class="c-name"></h3>
+          <div class="muted small c-sub"></div>
+        </div>
+        <span class="badge"></span>
+      </div>
+      <div class="c-tags chips"></div>
+      <p class="c-challenge"></p>
+      <div class="c-reach small"></div>
+      <details class="c-more">
+        <summary>Notes &amp; follow-up</summary>
+        <div class="field">
+          <label>Notes</label>
+          <textarea class="c-notes"></textarea>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Status</label>
+            <select class="c-status">
+              <option value="new">New</option>
+              <option value="contacted">Contacted</option>
+              <option value="meeting">Meeting booked</option>
+              <option value="client">Client 🎉</option>
+              <option value="archived">Archived</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Follow up on</label>
+            <input type="date" class="c-follow">
+          </div>
+        </div>
+        <div class="field">
+          <label>Follow-up message</label>
+          <textarea class="c-message" rows="5"></textarea>
+        </div>
+        <div class="send-row">
+          <a class="btn primary c-wa hidden" target="_blank" rel="noopener">WhatsApp</a>
+          <a class="btn c-mail hidden">Email</a>
+          <button type="button" class="btn c-copy">Copy</button>
+          <a class="btn c-li hidden" target="_blank" rel="noopener">LinkedIn</a>
+        </div>
+        <div class="send-row" style="margin-top:10px">
+          <button type="button" class="btn ghost danger c-delete">Delete</button>
+        </div>
+      </details>
+    </article>
+  </template>
+</body>
+</html>
