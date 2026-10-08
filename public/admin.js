@@ -112,11 +112,7 @@
   }
 
   function photoMessage(c) {
-    return `Hi ${firstName(c)}, lovely meeting you at ${c.event}! Here's our photo together 📸\n${profileUrl()}/p/${c.photo_token}\n\n${profile.name}`;
-  }
-
-  function profileUrl() {
-    return (profile.connectUrl || location.origin).replace(/\/+$/, '');
+    return c.connect_message;
   }
 
   function renderList(contacts) {
@@ -230,17 +226,23 @@
     const status = $('.c-photo-status', node);
     const waBtn = $('.c-photo-wa', node);
     const retry = $('.c-photo-retry', node);
+    const sent = $('.c-photo-sent', node);
     const paint = () => {
       const st = c.photo_whatsapp_status;
       status.className = `small c-photo-status${st === 'sent' ? ' ok' : st === 'failed' ? ' bad' : ''}`;
       status.textContent = {
         sent: '✓ Photo sent on WhatsApp',
         pending: 'Sending photo…',
-        failed: `Auto-send failed${c.photo_whatsapp_error ? `: ${c.photo_whatsapp_error}` : ''}`,
+        failed: `Not sent${c.photo_whatsapp_error ? `: ${c.photo_whatsapp_error}` : ''}`,
         manual: c.wa_number ? 'Photo ready to send' : 'No valid WhatsApp number (needs country code)',
       }[st] || 'Photo not sent (they chose not to receive it)';
-      waBtn.classList.toggle('hidden', !c.wa_number || st === 'sent');
-      retry.classList.toggle('hidden', !(profile.whatsappAuto && c.wa_number && st === 'failed'));
+      const canAuto = profile.whatsappAuto && c.wa_number && st !== 'pending';
+      retry.textContent = st === 'sent' ? 'Send again' : st === 'failed' ? 'Retry send' : 'Send now';
+      retry.classList.toggle('hidden', !canAuto);
+      // Without Evolution Go, open your own WhatsApp with the message ready instead.
+      waBtn.classList.toggle('hidden', !c.wa_number || st === 'sent' || profile.whatsappAuto);
+      sent.classList.toggle('hidden', !c.photo_message);
+      $('pre', sent).textContent = c.photo_message || '';
     };
     if (c.wa_number) waBtn.href = `https://wa.me/${c.wa_number}?text=${encodeURIComponent(photoMessage(c))}`;
     // Sending from your own WhatsApp opens the chat with the message ready; you just tap send.
@@ -249,7 +251,13 @@
     });
     retry.addEventListener('click', async () => {
       retry.disabled = true;
-      try { Object.assign(c, await api(`/api/contacts/${c.id}/send-photo`, { method: 'POST' })); } catch { /* shown below */ }
+      status.textContent = 'Sending photo…';
+      try {
+        Object.assign(c, await api(`/api/contacts/${c.id}/send-photo`, { method: 'POST' }));
+        if (c.photo_whatsapp_status === 'sent') toast(`Photo sent to ${firstName(c)}`);
+      } catch (e) {
+        if (e.data?.error) toast(e.data.error);
+      }
       retry.disabled = false;
       paint();
     });

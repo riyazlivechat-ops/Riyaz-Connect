@@ -4,12 +4,15 @@ services:
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: riyaz_connect
-    volumes: [pgdata:/var/lib/postgresql/data]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/evolution-init.sql:/docker-entrypoint-initdb.d/evolution-init.sql:ro
     ports: ["5432:5432"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 3s
       retries: 10
+
   app:
     build: .
     depends_on:
@@ -19,7 +22,36 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
       SESSION_SECRET: ${SESSION_SECRET:-}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+      DEFAULT_COUNTRY_CODE: ${DEFAULT_COUNTRY_CODE:-91}
+      EVOLUTION_API_URL: ${EVOLUTION_API_URL:-http://evolution-go:4000}
+      EVOLUTION_INSTANCE_TOKEN: ${EVOLUTION_INSTANCE_TOKEN:-}
       NODE_ENV: development
     ports: ["3000:3000"]
+
+  # WhatsApp sender. Start with: docker compose --profile whatsapp up
+  # Then open http://localhost:4000/manager/login to activate it and scan the QR code with your WhatsApp.
+  evolution-go:
+    image: evoapicloud/evolution-go:latest
+    profiles: [whatsapp]
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      SERVER_PORT: 4000
+      CLIENT_NAME: riyaz-connect
+      GLOBAL_API_KEY: ${EVOLUTION_GLOBAL_API_KEY:-change-this-admin-key}
+      POSTGRES_AUTH_DB: postgresql://postgres:postgres@db:5432/evogo_auth?sslmode=disable
+      POSTGRES_USERS_DB: postgresql://postgres:postgres@db:5432/evogo_users?sslmode=disable
+      DATABASE_SAVE_MESSAGES: "false"
+      CONNECT_ON_STARTUP: "true"
+      WADEBUG: INFO
+      LOGTYPE: console
+      MINIO_ENABLED: "false"
+      OS_NAME: Riyaz Connect
+      QRCODE_MAX_COUNT: "5"
+    volumes: [evolution_data:/app/dbdata]
+    ports: ["4000:4000"]
+
 volumes:
   pgdata:
+  evolution_data:

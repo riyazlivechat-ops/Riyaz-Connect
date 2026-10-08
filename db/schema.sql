@@ -42,3 +42,4 @@ ALTER TABLE contacts ADD COLUMN IF NOT EXISTS photo_whatsapp_status TEXT
   CHECK (photo_whatsapp_status IN ('pending', 'sent', 'failed', 'manual'));
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS photo_whatsapp_error  TEXT;
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS photo_sent_at         TIMESTAMPTZ;
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS photo_message         TEXT;

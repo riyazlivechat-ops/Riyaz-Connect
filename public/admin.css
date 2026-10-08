@@ -74,6 +74,9 @@
 .quick-photo img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; }
 .c-photo { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
 .c-photo img { width: 88px; height: 88px; object-fit: cover; border-radius: 12px; display: block; }
-.c-photo-side { flex: 1; display: grid; gap: 8px; }
+.c-photo-side { flex: 1; min-width: 0; display: grid; gap: 8px; }
 .c-photo-status.ok { color: var(--brand); font-weight: 600; }
 .c-photo-status.bad { color: var(--danger); }
+.c-photo-sent summary { cursor: pointer; color: var(--muted); }
+.c-photo-sent pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin: 6px 0 0; padding: 10px; border-radius: 10px; background: var(--surface-2); }
+.c-photo { align-items: flex-start; }

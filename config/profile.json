@@ -23,6 +23,7 @@
     "TODO: a short result, e.g. 'Cut appointment no-shows by 30% for a dental clinic'",
     "TODO: a second proof point"
   ],
+  "connectMessage": "",
   "gift": {
     "title": "TODO: a free resource, e.g. 'Free 15-minute AI automation audit for your clinic'",
     "url": ""

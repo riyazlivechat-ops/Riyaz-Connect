@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const QRCode = require('qrcode');
 const { pool, migrate } = require('./db');
 const whatsapp = require('./whatsapp');
+const { buildConnectMessage } = require('./message');
 
 const PORT = Number(process.env.PORT) || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
@@ -123,16 +124,23 @@ function parsePhoto(dataUrl) {
 // Everything except the photo bytes, which are only ever served from /p/:token.
 const CONTACT_COLUMNS = `id, event, source, full_name, company, role, email, phone, linkedin, interests, challenge,
   timeline, preferred_channel, referral, consent, score, warmth, status, notes, follow_up_on, created_at, updated_at,
-  photo_token, photo_whatsapp_status, photo_whatsapp_error, photo_sent_at`;
+  photo_token, photo_whatsapp_status, photo_whatsapp_error, photo_sent_at, photo_message`;
 
-function present(row) {
-  return { ...row, wa_number: whatsapp.toWhatsAppNumber(row.phone) };
+// Adds the WhatsApp number and, for photos, the personal message (with a photo link for sending by hand).
+function present(row, req) {
+  const out = { ...row, wa_number: whatsapp.toWhatsAppNumber(row.phone) };
+  if (row.photo_token) {
+    const text = row.photo_message || buildConnectMessage(row, loadProfile());
+    out.connect_message = `${text}\n\n📸 ${publicUrl(req)}/p/${row.photo_token}`;
+  }
+  return out;
 }
 
 // Delivers the photo in the background. Without WhatsApp API settings it is left for a one-tap manual send.
 async function deliverPhoto(id) {
   const { rows } = await pool.query(
-    'SELECT full_name, phone, event, photo, photo_mime FROM contacts WHERE id = $1 AND photo IS NOT NULL', [id],
+    `SELECT full_name, company, interests, challenge, phone, event, photo, photo_mime
+     FROM contacts WHERE id = $1 AND photo IS NOT NULL`, [id],
   );
   if (!rows.length) return;
   const c = rows[0];
@@ -142,12 +150,16 @@ async function deliverPhoto(id) {
       [id, to ? null : 'No WhatsApp number']);
     return;
   }
+  const caption = buildConnectMessage(c, loadProfile());
   await pool.query(`UPDATE contacts SET photo_whatsapp_status = 'pending', photo_whatsapp_error = NULL WHERE id = $1`, [id]);
   try {
-    await whatsapp.sendPhoto({
-      to, firstName: c.full_name.split(/\s+/)[0], eventName: c.event, photo: c.photo, mime: c.photo_mime,
-    });
-    await pool.query(`UPDATE contacts SET photo_whatsapp_status = 'sent', photo_sent_at = now() WHERE id = $1`, [id]);
+    const ext = c.photo_mime === 'image/png' ? 'png' : c.photo_mime === 'image/webp' ? 'webp' : 'jpg';
+    const filename = `${c.event.replace(/[^a-z0-9]+/gi, '-')}-${c.full_name.split(/\s+/)[0]}.${ext}`;
+    await whatsapp.sendPhoto({ to, caption, photo: c.photo, mime: c.photo_mime, filename });
+    await pool.query(
+      `UPDATE contacts SET photo_whatsapp_status = 'sent', photo_sent_at = now(), photo_message = $2 WHERE id = $1`,
+      [id, caption],
+    );
   } catch (err) {
     console.error(`WhatsApp photo to contact ${id} failed:`, err.message);
     await pool.query(`UPDATE contacts SET photo_whatsapp_status = 'failed', photo_whatsapp_error = $2 WHERE id = $1`,
@@ -400,7 +412,7 @@ app.get('/api/contacts', requireAdmin, asyncRoute(async (req, res) => {
      ORDER BY CASE warmth WHEN 'hot' THEN 0 WHEN 'warm' THEN 1 ELSE 2 END, created_at DESC LIMIT 500`,
     params,
   );
-  res.json(rows.map(present));
+  res.json(rows.map((r) => present(r, req)));
 }));
 
 app.get('/api/stats', requireAdmin, asyncRoute(async (req, res) => {
@@ -440,7 +452,7 @@ app.post('/api/contacts', requireAdmin, asyncRoute(async (req, res) => {
     if (req.body.send_photo === true) await deliverPhoto(id);
   }
   const saved = await pool.query(`SELECT ${CONTACT_COLUMNS} FROM contacts WHERE id = $1`, [id]);
-  res.status(201).json(present(saved.rows[0]));
+  res.status(201).json(present(saved.rows[0], req));
 }));
 
 app.patch('/api/contacts/:id', requireAdmin, asyncRoute(async (req, res) => {
@@ -473,16 +485,16 @@ app.patch('/api/contacts/:id', requireAdmin, asyncRoute(async (req, res) => {
     params,
   );
   if (!rows.length) return res.status(404).json({ error: 'Not found.' });
-  res.json(present(rows[0]));
+  res.json(present(rows[0], req));
 }));
 
-// Retry sending the photo automatically (needs WhatsApp API settings).
+// Send (or resend) the photo now through Evolution Go.
 app.post('/api/contacts/:id/send-photo', requireAdmin, asyncRoute(async (req, res) => {
-  if (!whatsapp.isConfigured()) return res.status(400).json({ error: 'WhatsApp sending is not set up yet.' });
+  if (!whatsapp.isConfigured()) return res.status(400).json({ error: 'Evolution Go is not set up yet.' });
   await deliverPhoto(req.params.id);
   const { rows } = await pool.query(`SELECT ${CONTACT_COLUMNS} FROM contacts WHERE id = $1`, [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Not found.' });
-  res.json(present(rows[0]));
+  res.json(present(rows[0], req));
 }));
 
 app.delete('/api/contacts/:id', requireAdmin, asyncRoute(async (req, res) => {

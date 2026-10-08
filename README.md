@@ -32,25 +32,46 @@ Edit **`config/profile.json`**. Any value that still starts with `TODO` is hidde
 - `gift`: an optional free resource shown after someone connects.
 - `event.name` / `event.greeting`: change these for each event. Every contact is tagged with the event name.
 
-## Sending the photo to WhatsApp
+## Sending the photo to WhatsApp (Evolution Go)
 
-There are two ways, and the app picks one automatically.
+When someone submits their details, the app sends **the photo plus a personal message** to their WhatsApp. It goes through [Evolution Go](https://github.com/evolution-foundation/evolution-go), which links to **your own WhatsApp** by QR code, so the message comes from your number and any reply lands in your normal chats.
 
-**A. One tap from your own WhatsApp (no setup, works today).**
-On each dashboard card with a photo, tap **Send photo on WhatsApp**. Your WhatsApp opens the chat with their number, with a message and a link to the photo already filled in, and WhatsApp shows the photo as a preview. You just press send. Because it comes from your personal number, it also starts a real conversation.
+The message is written from what they told you. For example:
 
-**B. Fully automatic (WhatsApp Cloud API).**
-The photo arrives on their WhatsApp seconds after they submit the form, with no action from you.
-1. In [Meta for Developers](https://developers.facebook.com/), create an app, add **WhatsApp**, and add a business phone number. It can't be the number you use in the WhatsApp app.
-2. In WhatsApp Manager, create a message template named `event_photo`, category *Marketing*:
-   - **Header:** Image
-   - **Body:** `Hi {{1}}, it was lovely meeting you at {{2}}! Here's our photo together. Let's stay in touch.`
-   - **Button (optional):** a URL button to your LinkedIn
-3. Once Meta approves the template (usually minutes to hours), set `WHATSAPP_TOKEN` (a permanent system-user token), `WHATSAPP_PHONE_NUMBER_ID`, and `WHATSAPP_TEMPLATE=event_photo`.
+> Hi Fatima! 👋
+>
+> It was a real pleasure meeting you at Amanah Chambers Connect, and learning about Noor Dental Care. Here's our photo together 📸
+>
+> You mentioned "Too many missed appointment calls". I've been thinking about it and have a few ideas that could help.
+>
+> Let's stay connected. Feel free to message me here anytime.
+>
+> 🔗 LinkedIn: https://www.linkedin.com/in/iammohamedriyaz
+> 🌐 https://sirahdigital.in
+>
+> Warm regards,
+> Mohamed Riyaz
+> Sirah Digital
 
-WhatsApp only lets a business message someone first with an approved template; that's why option B needs one. If an automatic send fails (for example, the number isn't on WhatsApp), the card shows the reason, along with **Retry** and the one-tap option A.
+To use your own wording, set `connectMessage` in `config/profile.json`, using `\n` for new lines. Available placeholders are `{firstName} {company} {event} {interest} {challenge} {myName} {myCompany} {linkedin} {website}`. A line whose placeholders are all empty is left out.
+
+### Set up Evolution Go (about 10 minutes)
+
+1. **Run it.** Locally, use `docker compose --profile whatsapp up`; it shares this app's Postgres. On a server, deploy the `evoapicloud/evolution-go` image with the same environment variables as the `evolution-go` service in `docker-compose.yml`.
+2. **Activate it.** Open `http://<evolution-host>:4000/manager/login`, enter the URL and your `EVOLUTION_GLOBAL_API_KEY`, and complete the one-time licence registration. Until you do, the API returns 503.
+3. **Create an instance.** In the Manager, create an instance (for example "riyaz") and give it a **token**. That token is your `EVOLUTION_INSTANCE_TOKEN`.
+4. **Link your WhatsApp.** Open the instance's QR code, then in WhatsApp on your phone go to *Settings → Linked devices → Link a device* and scan it.
+5. **Point this app at it.** Set `EVOLUTION_API_URL` (for example `https://wa.yourdomain.com`) and `EVOLUTION_INSTANCE_TOKEN`, then restart. The dashboard shows **Send now** on each card.
+
+Test it before the event by connecting with your own second number.
+
+**On the dashboard,** each photo card shows whether it was sent, the exact message sent, and **Send again** or **Retry send**. Errors are explained plainly, for example "This number is not on WhatsApp" or "Your WhatsApp is not connected in Evolution Go: scan the QR code again".
+
+**Without Evolution Go** (not set up, or it's down), each card has a **Send photo on WhatsApp** button. It opens your WhatsApp with the same personal message and a link to the photo, which WhatsApp shows as a preview.
 
 Set `DEFAULT_COUNTRY_CODE` (for example `91`) so that numbers typed without a country code still work.
+
+> Evolution Go uses WhatsApp's linked-devices (WhatsApp Web) protocol, not Meta's official business API. That works well for personal, one-to-one messages to people who just asked for them, as here. Don't use it for bulk or cold messaging, or WhatsApp may restrict your number.
 
 ## 2. Run it locally
 
@@ -96,7 +117,7 @@ The people you meet scan the QR code on their own phones, so the app needs a pub
 | GET | `/vcard` | – | Your contact card |
 | GET | `/qr.svg` | – | QR code for `PUBLIC_URL` |
 | GET | `/p/:token` and `/p/:token.jpg` | unguessable link | The photo keepsake page (with a WhatsApp preview) and the image itself |
-| POST | `/api/contacts/:id/send-photo` | admin | Retry sending the photo automatically |
+| POST | `/api/contacts/:id/send-photo` | admin | Send or resend the photo and message through Evolution Go |
 | POST | `/api/admin/login` | – | Sign in to the dashboard |
 | GET | `/api/contacts?q=&status=&warmth=&due=1` | admin | List and search contacts |
 | POST | `/api/contacts` | admin | Quick capture |
